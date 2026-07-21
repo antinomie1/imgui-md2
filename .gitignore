@@ -1,0 +1,9 @@
+.xmake/
+build/
+build-*/
+imgui.ini
+*.a
+*.exe
+*.o
+*.obj
+.claude/
