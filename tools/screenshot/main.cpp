@@ -542,8 +542,9 @@ void ShotTooltip() {
     // this window explicitly instead, since the content is a single
     // known line of text — no warmup frame needed.
     const ImVec2 text_size = ImGui::CalcTextSize(tooltip_text);
+    const ImVec2 padding(Metrics::Gap(), Metrics::DenseGap());
     ImGui::SetNextWindowPos(ImVec2(anchor_max.x + 8.0f, anchor_min.y));
-    ImGui::SetNextWindowSize(ImVec2(text_size.x + 16.0f, text_size.y + 8.0f));
+    ImGui::SetNextWindowSize(ImVec2(text_size.x + padding.x * 2.0f, text_size.y + padding.y * 2.0f));
     // A plain ImGui::Begin() window is styled by WindowBg, not PopupBg (the
     // real Tooltip() uses BeginTooltip(), which does draw from PopupBg) —
     // push WindowBg here or this inherits BeginCanvas()'s light background,
@@ -551,7 +552,7 @@ void ShotTooltip() {
     ImGui::PushStyleColor(ImGuiCol_WindowBg, Color::FromHex(0x616161, 0.96f).Vec4());
     ImGui::PushStyleColor(ImGuiCol_Text, Color::FromHex(0xffffff).Vec4());
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, theme.shapes.small);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 4.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);
     ImGui::Begin("##tooltip-demo", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |

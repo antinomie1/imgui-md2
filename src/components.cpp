@@ -1330,7 +1330,7 @@ void Tooltip(const char* text) {
     ImGui::PushStyleColor(ImGuiCol_PopupBg, Color::FromHex(0x616161, 0.96f).Vec4());
     ImGui::PushStyleColor(ImGuiCol_Text, Color::FromHex(0xffffff).Vec4());
     ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, theme.shapes.small);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 4.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Metrics::Gap(), Metrics::DenseGap()));
     ImGui::SetTooltip("%s", text);
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
