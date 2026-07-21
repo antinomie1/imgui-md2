@@ -633,10 +633,12 @@ bool TextField(const char* label, char* buffer, std::size_t buffer_size,
     ImGuiWindow* window = ImGui::GetCurrentWindow();
     if (window->SkipItems) return false;
     const Theme& theme = GetTheme();
+    const float dpi = DpiScale();
     const ImVec2 start = ImGui::GetCursorScreenPos();
     const float width = options.size.x > 0.0f ? options.size.x : ImGui::CalcItemWidth();
     const float height = options.size.y > 0.0f ? options.size.y
                                                : Metrics::TextFieldHeight();
+    const float icon_inset = (options.leading_icon ? 44.0f : 12.0f) * dpi;
     const ImGuiID animation_id = window->GetID(label);
     ImGui::PushID(label);
     if (!options.enabled) ImGui::BeginDisabled();
@@ -646,8 +648,8 @@ bool TextField(const char* label, char* buffer, std::size_t buffer_size,
     ImFont* input_font = theme.fonts.Get(TextStyle::Subtitle1);
     if (input_font) ImGui::PushFont(input_font);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
-                        ImVec2(options.leading_icon ? 44.0f : 12.0f,
-                               std::max((height - ImGui::GetFontSize()) * 0.5f, 4.0f)));
+                        ImVec2(icon_inset,
+                               std::max((height - ImGui::GetFontSize()) * 0.5f, 4.0f * dpi)));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding,
                         options.variant == TextFieldVariant::Filled ? theme.shapes.small
                                                                    : theme.shapes.medium);
@@ -680,16 +682,15 @@ bool TextField(const char* label, char* buffer, std::size_t buffer_size,
     // 浮动标签在 Subtitle1（16sp）与 Caption（12sp）之间连续插值字号——两者都是
     // regular 字重，用同一份字体数据按不同像素尺寸绘制即可平滑过渡，不需要在
     // 两个不同字重的字体间切换。
-    const float dpi = DpiScale();
     const float unfloated_size = Typography(TextStyle::Subtitle1).size * dpi;
     const float floated_size = Typography(TextStyle::Caption).size * dpi;
     const float label_font_size =
         unfloated_size + (floated_size - unfloated_size) * float_progress;
     ImFont* label_font = theme.fonts.Get(TextStyle::Caption);
     const float label_y_center = field.GetCenter().y - unfloated_size * 0.5f;
-    const float label_y_float = field.Min.y + 4.0f;
+    const float label_y_float = field.Min.y + 4.0f * dpi;
     const float label_y = label_y_center + (label_y_float - label_y_center) * float_progress;
-    float label_x = field.Min.x + (options.leading_icon ? 44.0f : 12.0f);
+    float label_x = field.Min.x + icon_inset;
     if (label_font) {
         window->DrawList->AddText(label_font, label_font_size, ImVec2(label_x, label_y),
                                   label_color.U32(), VisibleLabel(label).c_str());
@@ -700,18 +701,18 @@ bool TextField(const char* label, char* buffer, std::size_t buffer_size,
     if (options.leading_icon) {
         const ImVec2 icon_size = IconSize(options.leading_icon);
         RenderIcon(window->DrawList,
-                   ImVec2(field.Min.x + 12.0f, field.GetCenter().y - icon_size.y * 0.5f),
+                   ImVec2(field.Min.x + 12.0f * dpi, field.GetCenter().y - icon_size.y * 0.5f),
                    options.leading_icon, label_color);
     }
     if (options.trailing_icon) {
         const ImVec2 icon_size = IconSize(options.trailing_icon);
         RenderIcon(window->DrawList,
-                   ImVec2(field.Max.x - icon_size.x - 12.0f,
+                   ImVec2(field.Max.x - icon_size.x - 12.0f * dpi,
                           field.GetCenter().y - icon_size.y * 0.5f),
                    options.trailing_icon, label_color);
     }
     if (options.variant == TextFieldVariant::Filled) {
-        const float line = active ? 2.0f : 1.0f;
+        const float line = (active ? 2.0f : 1.0f) * dpi;
         window->DrawList->AddLine(ImVec2(field.Min.x, field.Max.y - line * 0.5f),
                                   ImVec2(field.Max.x, field.Max.y - line * 0.5f),
                                   (active || options.error ? accent
@@ -721,15 +722,15 @@ bool TextField(const char* label, char* buffer, std::size_t buffer_size,
     } else if (active || options.error || hovered) {
         window->DrawList->AddRect(field.Min, field.Max,
                                   (options.error ? theme.colors.error : theme.colors.primary).U32(),
-                                  theme.shapes.medium, 0, active ? 2.0f : 1.0f);
+                                  theme.shapes.medium, 0, (active ? 2.0f : 1.0f) * dpi);
     }
     if (options.helper_text) {
         const Color helper = options.error ? theme.colors.error
                                            : theme.colors.on_surface.WithAlpha(0.60f);
         const ScopedTextStyle helper_style(TextStyle::Caption);
-        window->DrawList->AddText(ImVec2(start.x + 12.0f, field.Max.y + 3.0f),
+        window->DrawList->AddText(ImVec2(start.x + 12.0f * dpi, field.Max.y + 3.0f * dpi),
                                   helper.U32(), options.helper_text);
-        ImGui::Dummy(ImVec2(0.0f, 20.0f));
+        ImGui::Dummy(ImVec2(0.0f, 20.0f * dpi));
     }
     return changed;
 }
@@ -1173,6 +1174,7 @@ bool BeginTopAppBar(const char* id, const char* title,
                     ImVec2 size) {
     NewFrame();
     const Theme& theme = GetTheme();
+    const float dpi = DpiScale();
     if (size.x <= 0.0f) size.x = ImGui::GetContentRegionAvail().x;
     if (size.y <= 0.0f) size.y = Metrics::AppBarHeight();
     const ImVec2 min = ImGui::GetCursorScreenPos();
@@ -1180,7 +1182,7 @@ bool BeginTopAppBar(const char* id, const char* title,
     ImGui::PushStyleColor(ImGuiCol_ChildBg, theme.app_bar.Vec4());
     ImGui::PushStyleColor(ImGuiCol_Text, theme.on_app_bar.Vec4());
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0f, 8.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0f * dpi, 8.0f * dpi));
     // AlwaysUseWindowPadding: 无边框 child window 默认不应用 WindowPadding。
     ImGui::BeginChild(id, size, ImGuiChildFlags_AlwaysUseWindowPadding,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -1189,9 +1191,9 @@ bool BeginTopAppBar(const char* id, const char* title,
         clicked = IconButton("##navigation", navigation_icon ? navigation_icon : "\xee\x97\x92",
                     false, true, Metrics::IconButtonSize());
         *navigation_clicked = clicked;
-        ImGui::SameLine(0.0f, 8.0f);
+        ImGui::SameLine(0.0f, 8.0f * dpi);
     } else {
-        ImGui::SetCursorPosX(12.0f);
+        ImGui::SetCursorPosX(12.0f * dpi);
     }
     // 应用栏标题使用 Headline6（20sp/Medium），MD2 Top App Bar 的标题层级。
     {
@@ -1245,7 +1247,7 @@ bool BeginDialog(const char* id, bool* open, ImGuiWindowFlags flags) {
     const Theme& theme = GetTheme();
     ImGui::PushStyleColor(ImGuiCol_PopupBg, SurfaceForElevation(theme, 24).Vec4());
     ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, theme.shapes.large);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24.0f, 20.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24.0f * DpiScale(), 20.0f * DpiScale()));
     const bool visible = ImGui::BeginPopupModal(
         id, open, flags | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
     if (!visible) {
@@ -1280,16 +1282,17 @@ bool Snackbar(const char* id_string, const char* message, bool* open,
         return false;
     }
     const Theme& theme = context.theme;
+    const float dpi = DpiScale();
     ImGuiViewport* viewport = ImGui::GetMainViewport();
-    const float width = std::min(344.0f, viewport->WorkSize.x - 32.0f);
+    const float width = std::min(344.0f * dpi, viewport->WorkSize.x - 32.0f * dpi);
     ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
-                                   viewport->WorkPos.y + viewport->WorkSize.y - 16.0f),
+                                   viewport->WorkPos.y + viewport->WorkSize.y - 16.0f * dpi),
                             ImGuiCond_Always, ImVec2(0.5f, 1.0f));
     ImGui::SetNextWindowSize(ImVec2(width, Metrics::SnackbarHeight()));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, theme.snackbar.Vec4());
     ImGui::PushStyleColor(ImGuiCol_Text, theme.on_snackbar.Vec4());
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Metrics::SnackbarCornerRadius());
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 6.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f * dpi, 6.0f * dpi));
     std::string window_name = std::string("##snackbar_") + id_string;
     ImGui::Begin(window_name.c_str(), nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
@@ -1305,13 +1308,13 @@ bool Snackbar(const char* id_string, const char* message, bool* open,
     if (action) {
         const ImVec2 action_size = ImGui::CalcTextSize(action);
         ImGui::SameLine();
-        ImGui::SetCursorPosX(width - action_size.x - 32.0f);
-        ImGui::SetCursorPosY(6.0f);
+        ImGui::SetCursorPosX(width - action_size.x - 32.0f * dpi);
+        ImGui::SetCursorPosY(6.0f * dpi);
         Theme action_theme = theme;
         action_theme.colors.primary = theme.colors.secondary;
         action_theme.colors.on_primary = theme.colors.on_secondary;
         GetContext().theme = action_theme;
-        action_clicked = TextButton(action, ImVec2(action_size.x + 24.0f, 36.0f));
+        action_clicked = TextButton(action, ImVec2(action_size.x + 24.0f * dpi, Metrics::ButtonMinHeight()));
         GetContext().theme = theme;
     }
     ImGui::End();
@@ -1330,7 +1333,7 @@ void Tooltip(const char* text) {
     ImGui::PushStyleColor(ImGuiCol_PopupBg, Color::FromHex(0x616161, 0.96f).Vec4());
     ImGui::PushStyleColor(ImGuiCol_Text, Color::FromHex(0xffffff).Vec4());
     ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, theme.shapes.small);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 4.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Metrics::Gap(), Metrics::DenseGap()));
     ImGui::SetTooltip("%s", text);
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
