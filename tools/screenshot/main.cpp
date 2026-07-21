@@ -543,8 +543,14 @@ void ShotTooltip() {
     // known line of text — no warmup frame needed.
     const ImVec2 text_size = ImGui::CalcTextSize(tooltip_text);
     const ImVec2 padding(Metrics::Gap(), Metrics::DenseGap());
-    ImGui::SetNextWindowPos(ImVec2(anchor_max.x + 8.0f, anchor_min.y));
-    ImGui::SetNextWindowSize(ImVec2(text_size.x + padding.x * 2.0f, text_size.y + padding.y * 2.0f));
+    const float tooltip_height = text_size.y + padding.y * 2.0f;
+    // Center the bubble on the anchor's full touch-target rect, not its
+    // top edge — IconButton's item rect is the 48dp touch target, much
+    // taller than the glyph or this single-line bubble, so top-aligning
+    // the two left the bubble visibly floating above the icon it points to.
+    ImGui::SetNextWindowPos(ImVec2(anchor_max.x + Metrics::Gap(),
+                                   anchor_min.y + (anchor_max.y - anchor_min.y - tooltip_height) * 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(text_size.x + padding.x * 2.0f, tooltip_height));
     // A plain ImGui::Begin() window is styled by WindowBg, not PopupBg (the
     // real Tooltip() uses BeginTooltip(), which does draw from PopupBg) —
     // push WindowBg here or this inherits BeginCanvas()'s light background,

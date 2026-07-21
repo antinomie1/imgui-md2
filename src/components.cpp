@@ -115,7 +115,7 @@ void DrawRipple(ImGuiID id, const ImRect& rect, float rounding, Color ink,
 }
 
 void RenderIcon(ImDrawList* draw, ImVec2 position, const char* icon, Color color,
-                float size = 24.0f) {
+                float size = Metrics::IconSize()) {
     ImFont* font = GetTheme().fonts.icons;
     if (font)
         draw->AddText(font, size, position, color.U32(), icon);
@@ -123,7 +123,7 @@ void RenderIcon(ImDrawList* draw, ImVec2 position, const char* icon, Color color
         draw->AddText(position, color.U32(), icon);
 }
 
-ImVec2 IconSize(const char* icon, float size = 24.0f) {
+ImVec2 IconSize(const char* icon, float size = Metrics::IconSize()) {
     ImFont* font = GetTheme().fonts.icons;
     return font ? font->CalcTextSizeA(size, FLT_MAX, 0.0f, icon)
                 : ImGui::CalcTextSize(icon);
@@ -371,7 +371,14 @@ bool IconButton(const char* id_string, const char* icon, bool selected,
     bool hovered = false;
     bool held = false;
     const bool pressed = CustomButtonBehavior(rect, id, enabled, &hovered, &held);
-    Color ink = selected ? theme.colors.primary : theme.colors.on_surface;
+    // Unselected icons follow the ambient text color (ImGuiCol_Text) rather
+    // than a fixed on_surface, so an IconButton placed on a colored surface
+    // — the app bar pushes on_app_bar, most themes white — tints to match
+    // its neighbouring text instead of staying dark. Standalone usage is
+    // unaffected: the theme sets ImGuiCol_Text to on_surface globally.
+    const ImVec4 text_col = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+    Color ink = selected ? theme.colors.primary
+                         : Color(text_col.x, text_col.y, text_col.z, text_col.w);
     if (!enabled) ink = ink.WithAlpha(theme.states.disabled_content);
     if (selected)
         window->DrawList->AddCircleFilled(rect.GetCenter(), size * 0.5f,
@@ -1188,6 +1195,11 @@ bool BeginTopAppBar(const char* id, const char* title,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     bool clicked = false;
     if (navigation_clicked) {
+        // Center the nav button vertically in the bar, matching the title
+        // below. Without this it inherits only the child's top padding, and
+        // an 8dp top pad + 48dp button in a 56dp bar leaves it flush to the
+        // bottom edge — sitting a few px below the centered title.
+        ImGui::SetCursorPosY(std::max(0.0f, (size.y - Metrics::IconButtonSize()) * 0.5f));
         clicked = IconButton("##navigation", navigation_icon ? navigation_icon : "\xee\x97\x92",
                     false, true, Metrics::IconButtonSize());
         *navigation_clicked = clicked;
@@ -1334,8 +1346,13 @@ void Tooltip(const char* text) {
     ImGui::PushStyleColor(ImGuiCol_Text, Color::FromHex(0xffffff).Vec4());
     ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, theme.shapes.small);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Metrics::Gap(), Metrics::DenseGap()));
+    // Default WindowMinSize (32,32) otherwise clamps a short single-line
+    // tooltip's height upward, and since content stays top-anchored, all
+    // of that extra slack piles up below the text instead of framing it
+    // symmetrically.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(1.0f, 1.0f));
     ImGui::SetTooltip("%s", text);
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar(3);
     ImGui::PopStyleColor(2);
 }
 
