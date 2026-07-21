@@ -559,6 +559,11 @@ void ShotTooltip() {
     ImGui::PushStyleColor(ImGuiCol_Text, Color::FromHex(0xffffff).Vec4());
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, theme.shapes.small);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);
+    // Mirror the real Tooltip()'s WindowMinSize override — ImGui clamps even
+    // an explicit SetNextWindowSize against WindowMinSize (default 32,32), so
+    // without this the short single-line bubble is padded to ~32px tall and
+    // the extra slack piles up below the text.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(1.0f, 1.0f));
     ImGui::Begin("##tooltip-demo", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
@@ -567,7 +572,7 @@ void ShotTooltip() {
     const ImVec2 tooltip_min = ImGui::GetWindowPos();
     const ImVec2 tooltip_max = tooltip_min + ImGui::GetWindowSize();
     ImGui::End();
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar(3);
     ImGui::PopStyleColor(2);
 
     QueueShot("tooltip.png", UnionMin(anchor_min, tooltip_min), UnionMax(anchor_max, tooltip_max));
