@@ -107,10 +107,15 @@ void DrawRipple(ImGuiID id, const ImRect& rect, float rounding, Color ink,
     } else {
         opacity *= std::min(ripple->age / theme.motion.ripple_fade_in, 1.0f);
     }
+    const ImVec2 rsize = rect.Max - rect.Min;
+    const bool circular = std::abs(rsize.x - rsize.y) < 1.0f &&
+                          rounding >= std::min(rsize.x, rsize.y) * 0.5f - 0.5f;
+    // 圆形控件：涟漪固定居中、铺满内切圆，不跟随鼠标按压点；矩形控件保持触点扩散到四角。
+    const ImVec2 draw_center = circular ? rect.GetCenter() : ripple->center;
+    const float max_radius = circular ? std::min(rsize.x, rsize.y) * 0.5f
+                                      : RadiusToCorners(ripple->center, rect);
     draw->PushClipRect(rect.Min, rect.Max, true);
-    draw->AddCircleFilled(ripple->center,
-                          RadiusToCorners(ripple->center, rect) * expand,
-                          ink.U32(opacity), 48);
+    draw->AddCircleFilled(draw_center, max_radius * expand, ink.U32(opacity), 48);
     draw->PopClipRect();
 }
 
@@ -275,6 +280,15 @@ void ElevationShadow(ImDrawList* draw_list, ImVec2 minimum, ImVec2 maximum,
                      float rounding, int elevation, float alpha) {
     if (!draw_list || elevation <= 0 || alpha <= 0.0f) return;
     elevation = std::clamp(elevation, 1, 24);
+    const ImVec2 size = maximum - minimum;
+    const ImVec2 center =
+        ImVec2((minimum.x + maximum.x) * 0.5f, (minimum.y + maximum.y) * 0.5f);
+    const float half_min = std::min(size.x, size.y) * 0.5f;
+    // Concentric (circular) case: a near-square rect whose corner radius makes
+    // it a disc — draw a centred radial glow instead of a downward-offset drop
+    // shadow, so it reads as a soft circle rather than a boxy rounded rect.
+    const bool circular =
+        std::abs(size.x - size.y) < 1.0f && rounding >= half_min - 0.5f;
     const float offset = 0.5f + elevation * 0.22f;
     const float spread = 1.0f + elevation * 0.32f;
     const int layers = std::clamp(2 + elevation / 3, 2, 8);
@@ -282,10 +296,15 @@ void ElevationShadow(ImDrawList* draw_list, ImVec2 minimum, ImVec2 maximum,
         const float t = static_cast<float>(i) / layers;
         const float grow = spread * t;
         const float layer_alpha = alpha * (0.055f / layers) * (1.2f - t * 0.35f);
-        draw_list->AddRectFilled(minimum - ImVec2(grow, grow) + ImVec2(0, offset),
-                                 maximum + ImVec2(grow, grow) + ImVec2(0, offset),
-                                 Color::FromHex(0x000000, layer_alpha).U32(),
-                                 rounding + grow);
+        if (circular) {
+            draw_list->AddCircleFilled(center, half_min + grow,
+                                       Color::FromHex(0x000000, layer_alpha).U32(), 48);
+        } else {
+            draw_list->AddRectFilled(minimum - ImVec2(grow, grow) + ImVec2(0, offset),
+                                     maximum + ImVec2(grow, grow) + ImVec2(0, offset),
+                                     Color::FromHex(0x000000, layer_alpha).U32(),
+                                     rounding + grow);
+        }
     }
 }
 
@@ -390,12 +409,14 @@ bool IconButton(const char* id_string, const char* icon, bool selected,
 }
 
 bool FloatingActionButton(const char* id_string, const char* icon,
-                          const char* label, bool enabled) {
+                          const FabOptions& options) {
     NewFrame();
     ImGuiWindow* window = ImGui::GetCurrentWindow();
     if (window->SkipItems) return false;
     const Theme& theme = GetTheme();
     const ImGuiID id = window->GetID(id_string);
+    const bool enabled = options.enabled;
+    const char* label = options.label;
     // FAB 扩展标签与普通按钮共享同一套 Button TextStyle（14sp/Medium/大写）。
     const ScopedTextStyle text_style(TextStyle::Button);
     const std::string visible = label ? Uppercase(VisibleLabel(label)) : std::string();
@@ -406,11 +427,16 @@ bool FloatingActionButton(const char* id_string, const char* icon,
     bool hovered = false;
     bool held = false;
     const bool pressed = CustomButtonBehavior(rect, id, enabled, &hovered, &held);
-    Color container = enabled ? theme.colors.secondary
-                              : theme.colors.on_surface.WithAlpha(theme.states.disabled_container);
-    Color content = enabled ? theme.colors.on_secondary
-                            : theme.colors.on_surface.WithAlpha(theme.states.disabled_content);
-    ElevationShadow(window->DrawList, rect.Min, rect.Max, 28.0f, held ? 12 : 6);
+    // alpha < 0 = 用主题默认色；否则用调用方覆盖的颜色。
+    Color container = options.container.a >= 0.0f ? options.container : theme.colors.secondary;
+    Color content = options.content.a >= 0.0f ? options.content : theme.colors.on_secondary;
+    if (!enabled) {
+        container = theme.colors.on_surface.WithAlpha(theme.states.disabled_container);
+        content = theme.colors.on_surface.WithAlpha(theme.states.disabled_content);
+    }
+    // 静止用 rest_elevation（可为 0=无阴影），悬停/按下用 hover_elevation。
+    const int elev = (hovered || held) ? options.hover_elevation : options.rest_elevation;
+    ElevationShadow(window->DrawList, rect.Min, rect.Max, 28.0f, elev);
     window->DrawList->AddRectFilled(rect.Min, rect.Max, container.U32(), 28.0f);
     DrawRipple(id, rect, 28.0f, content, hovered, held, enabled);
     const ImVec2 icon_size = IconSize(icon);
@@ -421,6 +447,14 @@ bool FloatingActionButton(const char* id_string, const char* icon,
         window->DrawList->AddText(ImVec2(x + 40.0f, rect.GetCenter().y - text_size.y * 0.5f),
                                   content.U32(), visible.c_str());
     return pressed;
+}
+
+bool FloatingActionButton(const char* id_string, const char* icon,
+                          const char* label, bool enabled) {
+    FabOptions options;
+    options.label = label;
+    options.enabled = enabled;
+    return FloatingActionButton(id_string, icon, options);
 }
 
 bool Checkbox(const char* label, bool* value, bool enabled) {
