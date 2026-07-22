@@ -35,6 +35,21 @@ bool OutlinedButton(const char* label, ImVec2 size = {});
 bool ContainedButton(const char* label, ImVec2 size = {});
 bool IconButton(const char* id, const char* icon, bool selected = false,
                 bool enabled = true, float size = -1.0f);
+struct FabOptions {
+    const char* label = nullptr;
+    bool enabled = true;
+    // alpha < 0 is a sentinel meaning "use the theme default": secondary for the
+    // container, on_secondary for the content (icon/label).
+    Color container = Color(0, 0, 0, -1);
+    Color content = Color(0, 0, 0, -1);
+    // Resting elevation (shadow). Set to 0 for a flat FAB with no shadow at rest;
+    // the shadow then only appears on hover/press via hover_elevation.
+    int rest_elevation = 6;
+    int hover_elevation = 12;
+};
+
+bool FloatingActionButton(const char* id, const char* icon,
+                          const FabOptions& options);
 bool FloatingActionButton(const char* id, const char* icon,
                           const char* label = nullptr, bool enabled = true);
 
