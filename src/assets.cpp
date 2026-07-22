@@ -256,4 +256,23 @@ bool LoadBundledFonts(ImFontAtlas& atlas, TypographyFonts& result,
     return true;
 }
 
+ImFont* AddBoldFont(ImFontAtlas& atlas, float size, const ImWchar* glyph_ranges,
+                    const std::vector<FontMerge>& merge_fonts) {
+    const unsigned char* data = EmbeddedFonts::BoldData();
+    std::size_t data_size = EmbeddedFonts::BoldSize();
+    if (!data || data_size == 0) {
+        data = EmbeddedFonts::MediumData();
+        data_size = EmbeddedFonts::MediumSize();
+    }
+    if (!data || data_size == 0) {
+        data = EmbeddedFonts::RegularData();
+        data_size = EmbeddedFonts::RegularSize();
+    }
+    const ImWchar* ranges = glyph_ranges ? glyph_ranges : atlas.GetGlyphRangesDefault();
+    ImFont* font = AddMemoryFont(atlas, data, data_size, size, ranges);
+    if (!font) return nullptr;
+    ApplyMergeFonts(atlas, size, merge_fonts);
+    return font;
+}
+
 } // namespace ImGuiMD2

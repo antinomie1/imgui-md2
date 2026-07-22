@@ -82,6 +82,18 @@ bool LoadBundledFonts(ImFontAtlas& atlas, TypographyFonts& result,
                       const FontLoadOptions& options = {},
                       std::string* error = nullptr);
 
+// Builds a single genuinely-bold font: the embedded Roboto Bold (falling back
+// to Medium, then Regular, when the library was not built with
+// IMGUI_MD2_EMBED_BOLD/IMGUI_MD2_EMBED_FULL_FONTS), with merge_fonts layered
+// on top at the same pixel size — e.g. a bold CJK system face the host
+// discovered at runtime. This is the real-weight counterpart to
+// ButtonOptions::bold's faux-bold (double-draw) fallback: prefer this
+// whenever a real bold face is available, and keep faux-bold only for when it
+// isn't. Returns nullptr if even Regular is unavailable.
+ImFont* AddBoldFont(ImFontAtlas& atlas, float size,
+                    const ImWchar* glyph_ranges = nullptr,
+                    const std::vector<FontMerge>& merge_fonts = {});
+
 namespace Icons {
 inline constexpr const char* Add = "\xee\x85\x85";
 inline constexpr const char* ArrowBack = "\xee\x97\x84";

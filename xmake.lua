@@ -21,6 +21,27 @@ option("imgui_md2_embed_full_fonts", {
     type = "boolean"
 })
 
+option("imgui_md2_embed_light", {
+    description = "Embed Roboto Light weight",
+    showmenu = true,
+    default = false,
+    type = "boolean"
+})
+
+option("imgui_md2_embed_medium", {
+    description = "Embed Roboto Medium weight",
+    showmenu = true,
+    default = false,
+    type = "boolean"
+})
+
+option("imgui_md2_embed_bold", {
+    description = "Embed Roboto Bold weight",
+    showmenu = true,
+    default = false,
+    type = "boolean"
+})
+
 target("imgui-md2")
     set_kind("static")
     add_files("src/*.cpp")
@@ -30,6 +51,15 @@ target("imgui-md2")
     add_defines('IMGUI_MD2_ASSET_DIR="assets"')
     if has_config("imgui_md2_embed_full_fonts") then
         add_defines("IMGUI_MD2_EMBED_FULL_FONTS")
+    end
+    if has_config("imgui_md2_embed_light") then
+        add_defines("IMGUI_MD2_EMBED_LIGHT")
+    end
+    if has_config("imgui_md2_embed_medium") then
+        add_defines("IMGUI_MD2_EMBED_MEDIUM")
+    end
+    if has_config("imgui_md2_embed_bold") then
+        add_defines("IMGUI_MD2_EMBED_BOLD")
     end
     if is_plat("windows") then
         add_defines("NOMINMAX")

@@ -352,8 +352,15 @@ bool Button(const char* label, const ButtonOptions& options) {
                    options.leading_icon, content);
         x += icon_width;
     }
-    draw->AddText(ImVec2(x, rect.GetCenter().y - text_size.y * 0.5f), content.U32(),
-                  text.c_str());
+    const ImVec2 text_pos(x, rect.GetCenter().y - text_size.y * 0.5f);
+    draw->AddText(text_pos, content.U32(), text.c_str());
+    if (options.bold) {
+        // Faux-bold: draw the label a second time, offset a sub-pixel amount on
+        // x, same technique as the app-bar title double-draw in frame.cpp. This
+        // thickens any glyph -- including system-fallback CJK, which only has a
+        // single embedded weight -- without switching font weight.
+        draw->AddText(text_pos + ImVec2(0.6f, 0.0f), content.U32(), text.c_str());
+    }
     return pressed;
 }
 
@@ -783,9 +790,10 @@ bool Select(const char* label, int* current, const char* const* items,
     *current = std::clamp(*current, 0, count - 1);
     if (width <= 0.0f) width = ImGui::CalcItemWidth();
     ImGui::PushID(label);
-    const Color label_color = enabled ? GetTheme().colors.on_surface.WithAlpha(0.60f)
-                                      : GetTheme().colors.on_surface.WithAlpha(
-                                            GetTheme().states.disabled_content);
+    const Theme& theme = GetTheme();
+    const Color label_color = enabled ? theme.colors.on_surface.WithAlpha(0.60f)
+                                      : theme.colors.on_surface.WithAlpha(
+                                            theme.states.disabled_content);
     Text(TextStyle::Caption, label, label_color);
     ButtonOptions options;
     options.variant = ButtonVariant::Outlined;
@@ -795,11 +803,60 @@ bool Select(const char* label, int* current, const char* const* items,
     const bool opened = Button(preview.c_str(), options);
     if (opened) ImGui::OpenPopup("##select-popup");
     bool changed = false;
-    ImGui::SetNextWindowSizeConstraints(ImVec2(width, 0.0f), ImVec2(width, 320.0f));
+
+    // 弹框宽度自适应最宽项的文字（紧凑行使用的 Subtitle2 字体），避免内容被裁切；
+    // 下限为触发按钮宽度，上限为其 1.8 倍，防止弹框过宽。
+    float max_item_w = 0.0f;
+    {
+        const ScopedTextStyle row_style(TextStyle::Subtitle2);
+        for (int i = 0; i < count; ++i)
+            max_item_w = std::max(max_item_w,
+                                  ImGui::CalcTextSize(VisibleLabel(items[i]).c_str()).x);
+    }
+    const float popup_w = ImClamp(max_item_w + 16.0f * 2.0f + 20.0f, 80.0f, width * 1.8f);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(popup_w, 0.0f), ImVec2(popup_w, 320.0f));
+
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, theme.shapes.medium);
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 8.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, theme.colors.outline.U32());
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, theme.colors.surface.U32());
     if (ImGui::BeginPopup("##select-popup")) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 wmin = ImGui::GetWindowPos();
+        const ImVec2 wmax = wmin + ImGui::GetWindowSize();
+        dl->PushClipRectFullScreen();
+        ElevationShadow(dl, wmin, wmax, theme.shapes.medium, 8);
+        dl->PopClipRect();
+
+        // 紧凑行（约 36dp），比整高 ListItem 更适合下拉菜单密度。
+        constexpr float kRowHeight = 36.0f;
         for (int i = 0; i < count; ++i) {
             ImGui::PushID(i);
-            if (ListItem(items[i], nullptr, nullptr, nullptr, i == *current, enabled)) {
+            ImGuiWindow* window = ImGui::GetCurrentWindow();
+            const bool selected = (i == *current);
+            const float row_width = ImGui::GetContentRegionAvail().x;
+            const ImRect rect(window->DC.CursorPos,
+                              window->DC.CursorPos + ImVec2(row_width, kRowHeight));
+            const ImGuiID row_id = window->GetID(items[i]);
+            bool hovered = false;
+            bool held = false;
+            const bool pressed = CustomButtonBehavior(rect, row_id, enabled, &hovered, &held);
+            Color ink = selected ? theme.colors.primary : theme.colors.on_surface;
+            if (!enabled) ink = theme.colors.on_surface.WithAlpha(theme.states.disabled_content);
+            if (selected)
+                window->DrawList->AddRectFilled(rect.Min, rect.Max,
+                                                theme.colors.primary.U32(theme.states.selected));
+            DrawRipple(row_id, rect, 0.0f, ink, hovered, held, enabled);
+            {
+                const ScopedTextStyle row_style(TextStyle::Subtitle2);
+                const std::string visible = VisibleLabel(items[i]);
+                const ImVec2 text_size = ImGui::CalcTextSize(visible.c_str());
+                window->DrawList->AddText(
+                    ImVec2(rect.Min.x + 16.0f, rect.GetCenter().y - text_size.y * 0.5f),
+                    ink.U32(), visible.c_str());
+            }
+            if (pressed) {
                 *current = i;
                 changed = true;
                 ImGui::CloseCurrentPopup();
@@ -808,6 +865,8 @@ bool Select(const char* label, int* current, const char* const* items,
         }
         ImGui::EndPopup();
     }
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(3);
     ImGui::PopID();
     return changed;
 }
@@ -937,8 +996,9 @@ bool ListItem(const char* label, const char* supporting_text,
     if (!enabled) ink = theme.colors.on_surface.WithAlpha(theme.states.disabled_content);
     if (selected)
         window->DrawList->AddRectFilled(rect.Min, rect.Max,
-                                         theme.colors.primary.U32(theme.states.selected));
-    DrawRipple(id, rect, 0.0f, ink, hovered, held, enabled);
+                                         theme.colors.primary.U32(theme.states.selected),
+                                         theme.shapes.small);
+    DrawRipple(id, rect, theme.shapes.small, ink, hovered, held, enabled);
     float x = rect.Min.x + 16.0f;
     if (leading_icon) {
         const ImVec2 icon_size = IconSize(leading_icon);

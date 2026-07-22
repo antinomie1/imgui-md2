@@ -27,6 +27,7 @@ struct ButtonOptions {
     const char* leading_icon = nullptr;
     bool enabled = true;
     bool full_width = false;
+    bool bold = false;
 };
 
 bool Button(const char* label, const ButtonOptions& options = {});
