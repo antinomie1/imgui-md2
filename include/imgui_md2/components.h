@@ -86,10 +86,19 @@ void CircularProgress(const char* id, float fraction = -1.0f,
 bool BeginCard(const char* id, ImVec2 size = {}, int elevation = 1,
                bool outlined = false);
 void EndCard();
+// `trailing_icon`, if set, draws an interactive icon button in the trailing
+// slot instead of `trailing_text` (pass only one -- trailing_icon takes
+// priority if both are set), e.g. a per-row delete/remove action. Its hit
+// region is excluded from the row's own so a click on it doesn't also count
+// as selecting the row (ImGui doesn't occlude overlapping hit-tests between
+// separate items on its own -- both would otherwise fire on the same
+// click). `trailing_clicked` (optional) receives whether it was clicked
+// this frame; the row's own pressed state is still the return value.
 bool ListItem(const char* label, const char* supporting_text = nullptr,
               const char* leading_icon = nullptr,
               const char* trailing_text = nullptr, bool selected = false,
-              bool enabled = true);
+              bool enabled = true, const char* trailing_icon = nullptr,
+              bool* trailing_clicked = nullptr);
 void Divider(float inset = 0.0f);
 
 bool Chip(const char* label, bool* selected = nullptr,
@@ -119,8 +128,12 @@ void EndDialog();
 
 // Set `open` to true to start the timeout. The action result is returned and
 // `open` becomes false after timeout or action. Pass timeout <= 0 to persist.
+// By default the snackbar anchors to the bottom-center of the main viewport;
+// pass a bounds rect (both corners) to anchor it to the bottom-center of that
+// region instead (e.g. an app's content area so it doesn't overlap chrome).
 bool Snackbar(const char* id, const char* message, bool* open,
-              const char* action = nullptr, float timeout = 4.0f);
+              const char* action = nullptr, float timeout = 4.0f,
+              const ImVec2* bounds_min = nullptr, const ImVec2* bounds_max = nullptr);
 
 void Tooltip(const char* text);
 void Text(TextStyle style, const char* text,

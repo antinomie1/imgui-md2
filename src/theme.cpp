@@ -224,6 +224,10 @@ void FinishTheme(Theme& theme, bool dark) {
                           : Color::FromHex(0x000000, Emphasis::disabled);
     theme.snackbar = Color::FromHex(0x323232);
     theme.on_snackbar = Color::FromHex(0xffffff);
+    // M2 scrim: translucent black, not the opaque-black Color default. Used for
+    // NavWindowingDimBg and as the tint an app draws for its own region-scoped
+    // dialog dim (ModalWindowDimBg itself is disabled in ApplyTheme).
+    theme.colors.scrim = Color::FromHex(0x000000, 0.32f);
     if (theme.app_bar.a <= 0.0f) theme.app_bar = theme.colors.primary;
     if (theme.on_app_bar.a <= 0.0f) theme.on_app_bar = theme.colors.on_primary;
     if (theme.name == nullptr) theme.name = dark ? "dark" : "light";
@@ -469,7 +473,12 @@ void ApplyTheme(const Theme& theme, ImGuiStyle* destination) {
     style.Colors[ImGuiCol_NavCursor] = c.primary.Vec4();
     style.Colors[ImGuiCol_NavWindowingHighlight] = c.on_surface.WithAlpha(0.70f).Vec4();
     style.Colors[ImGuiCol_NavWindowingDimBg] = c.scrim.Vec4();
-    style.Colors[ImGuiCol_ModalWindowDimBg] = c.scrim.Vec4();
+    // Disable ImGui's built-in full-viewport modal dim: it can only cover the
+    // whole viewport and can't be region-clipped, so an app that wants the dim
+    // confined to a sub-region (e.g. a content area, leaving chrome lit) draws
+    // its own scrim rect/window with c.scrim instead. Left opaque here it would
+    // black out the entire window behind any dialog.
+    style.Colors[ImGuiCol_ModalWindowDimBg] = Color(0, 0, 0, 0).Vec4();
 
     style.WindowPadding = ImVec2(16.0f * d, 16.0f * d);
     style.FramePadding = ImVec2(12.0f * d, 8.0f * d);

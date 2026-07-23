@@ -43,6 +43,31 @@ std::string VisibleLabel(const char* label) {
     return std::string(label, end);
 }
 
+// Truncates `text` to fit within `max_width`, appending "..." if it doesn't
+// already fit -- measured against whatever font/style is currently pushed,
+// so must be called with the right ScopedTextStyle already active. Walks
+// forward by whole UTF-8 codepoints (ImTextCharFromUtf8) rather than raw
+// bytes so a multi-byte character never gets split mid-sequence.
+std::string EllipsizeToWidth(const char* text, float max_width) {
+    if (max_width <= 0.0f) return std::string();
+    if (ImGui::CalcTextSize(text).x <= max_width) return std::string(text);
+
+    const char* const kEllipsis = "...";
+    if (ImGui::CalcTextSize(kEllipsis).x > max_width) return std::string();
+
+    std::string kept;
+    for (const char* p = text; *p != '\0';) {
+        unsigned int codepoint = 0;
+        const char* next = p + ImTextCharFromUtf8(&codepoint, p, nullptr);
+        if (next <= p) break; // malformed UTF-8 -- stop rather than loop
+        const std::string candidate = kept + std::string(p, next) + kEllipsis;
+        if (ImGui::CalcTextSize(candidate.c_str()).x > max_width) break;
+        kept.append(p, next);
+        p = next;
+    }
+    return kept + kEllipsis;
+}
+
 std::string Uppercase(std::string text) {
     for (char& value : text) {
         const unsigned char c = static_cast<unsigned char>(value);
@@ -979,7 +1004,8 @@ void EndCard() {
 
 bool ListItem(const char* label, const char* supporting_text,
               const char* leading_icon, const char* trailing_text,
-              bool selected, bool enabled) {
+              bool selected, bool enabled, const char* trailing_icon,
+              bool* trailing_clicked) {
     NewFrame();
     ImGuiWindow* window = ImGui::GetCurrentWindow();
     if (window->SkipItems) return false;
@@ -989,16 +1015,24 @@ bool ListItem(const char* label, const char* supporting_text,
                                          : Metrics::ListRowHeight();
     const float width = ImGui::GetContentRegionAvail().x;
     const ImRect rect(window->DC.CursorPos, window->DC.CursorPos + ImVec2(width, height));
+
+    // A trailing interactive icon needs its own hit region, excluded from
+    // the row's -- otherwise a single click could register as both "row
+    // selected" and "icon clicked" (ImGui doesn't occlude overlapping
+    // hit-tests between separate items on its own).
+    const float icon_reserve = trailing_icon ? Metrics::IconButtonSize() : 0.0f;
+    const ImRect hit_rect(rect.Min, rect.Max - ImVec2(icon_reserve, 0.0f));
+
     bool hovered = false;
     bool held = false;
-    const bool pressed = CustomButtonBehavior(rect, id, enabled, &hovered, &held);
+    const bool pressed = CustomButtonBehavior(hit_rect, id, enabled, &hovered, &held);
     Color ink = selected ? theme.colors.primary : theme.colors.on_surface;
     if (!enabled) ink = theme.colors.on_surface.WithAlpha(theme.states.disabled_content);
     if (selected)
         window->DrawList->AddRectFilled(rect.Min, rect.Max,
                                          theme.colors.primary.U32(theme.states.selected),
                                          theme.shapes.small);
-    DrawRipple(id, rect, theme.shapes.small, ink, hovered, held, enabled);
+    DrawRipple(id, hit_rect, theme.shapes.small, ink, hovered, held, enabled);
     float x = rect.Min.x + 16.0f;
     if (leading_icon) {
         const ImVec2 icon_size = IconSize(leading_icon);
@@ -1011,10 +1045,22 @@ bool ListItem(const char* label, const char* supporting_text,
     {
         // 主文字使用 Subtitle1（16sp/regular），MD2 列表项的正文层级。
         const ScopedTextStyle primary_style(TextStyle::Subtitle1);
-        const ImVec2 primary_size = ImGui::CalcTextSize(visible.c_str());
+        // Ellipsize instead of letting a long label (e.g. a full filesystem
+        // path) run into the trailing icon/text or off the row's own right
+        // edge -- reserve whatever space that trailing content needs first.
+        float trailing_reserve = 16.0f; // right margin even with nothing trailing
+        if (trailing_icon) {
+            trailing_reserve = icon_reserve + 32.0f;
+        } else if (trailing_text) {
+            const ScopedTextStyle trailing_measure_style(TextStyle::Caption);
+            trailing_reserve = ImGui::CalcTextSize(trailing_text).x + 24.0f;
+        }
+        const std::string ellipsized =
+            EllipsizeToWidth(visible.c_str(), rect.Max.x - trailing_reserve - x);
+        const ImVec2 primary_size = ImGui::CalcTextSize(ellipsized.c_str());
         const float primary_y = supporting_text ? rect.Min.y + 15.0f
                                                 : rect.GetCenter().y - primary_size.y * 0.5f;
-        window->DrawList->AddText(ImVec2(x, primary_y), ink.U32(), visible.c_str());
+        window->DrawList->AddText(ImVec2(x, primary_y), ink.U32(), ellipsized.c_str());
     }
     if (supporting_text) {
         // 辅助说明文字使用 Body2（14sp/regular）。
@@ -1024,7 +1070,15 @@ bool ListItem(const char* label, const char* supporting_text,
                                                                       : theme.states.disabled_content),
                                   supporting_text);
     }
-    if (trailing_text) {
+    if (trailing_icon) {
+        ImGui::PushID(label);
+        ImGui::SetCursorScreenPos(
+            ImVec2(rect.Max.x - icon_reserve, rect.GetCenter().y - icon_reserve * 0.5f));
+        const bool icon_pressed =
+            IconButton("##trailing_icon", trailing_icon, false, enabled, icon_reserve);
+        ImGui::PopID();
+        if (trailing_clicked) *trailing_clicked = icon_pressed;
+    } else if (trailing_text) {
         // 行尾元信息（如时间戳）使用 Caption（12sp/regular）。
         const ScopedTextStyle trailing_style(TextStyle::Caption);
         const ImVec2 trailing_size = ImGui::CalcTextSize(trailing_text);
@@ -1033,6 +1087,17 @@ bool ListItem(const char* label, const char* supporting_text,
                                   theme.colors.on_surface.U32(enabled ? 0.60f
                                                                       : theme.states.disabled_content),
                                   trailing_text);
+    }
+
+    // The trailing icon is drawn/hit-tested via its own IconButton call,
+    // which independently advances the cursor based on its own (square,
+    // Metrics::IconButtonSize()-tall) rect. That matches the row's own
+    // height exactly for a single-line row, but would leave the cursor too
+    // high after a two-line row (ListRowHeightTwoLine() > IconButtonSize()),
+    // so the next item would start overlapping this row's bottom instead of
+    // flush below it. Force it back to the row's true bottom regardless.
+    if (trailing_icon) {
+        ImGui::SetCursorScreenPos(ImVec2(rect.Min.x, rect.Max.y));
     }
     return pressed;
 }
@@ -1352,25 +1417,39 @@ bool BeginDialog(const char* id, bool* open, ImGuiWindowFlags flags) {
     NewFrame();
     const Theme& theme = GetTheme();
     ImGui::PushStyleColor(ImGuiCol_PopupBg, SurfaceForElevation(theme, 24).Vec4());
+    // A visible outline so the dialog reads as a distinct surface floating over
+    // the page (the global WindowBorderSize is 0, and the stock outline alpha is
+    // a faint 0.12). on_surface at medium emphasis is clearly visible in both
+    // light and dark themes.
+    ImGui::PushStyleColor(ImGuiCol_Border, theme.colors.on_surface.WithAlpha(0.5f).Vec4());
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.5f * DpiScale());
     ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, theme.shapes.large);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24.0f * DpiScale(), 20.0f * DpiScale()));
+    // NoTitleBar: MD2 dialogs render their own headline (TextH6) as the first
+    // line of body content, never an OS-style title bar -- whose background
+    // (ImGuiCol_TitleBgActive) is themed to the app-bar/primary color and would
+    // otherwise show as a stray colored strip above the dialog. Forced here
+    // (like AlwaysAutoResize/NoSavedSettings) so no caller can reintroduce it.
     const bool visible = ImGui::BeginPopupModal(
-        id, open, flags | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
+        id, open,
+        flags | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
+            ImGuiWindowFlags_NoTitleBar);
     if (!visible) {
-        ImGui::PopStyleVar(2);
-        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(3);
+        ImGui::PopStyleColor(2);
     }
     return visible;
 }
 
 void EndDialog() {
     ImGui::EndPopup();
-    ImGui::PopStyleVar(2);
-    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(3);
+    ImGui::PopStyleColor(2);
 }
 
 bool Snackbar(const char* id_string, const char* message, bool* open,
-              const char* action, float timeout) {
+              const char* action, float timeout,
+              const ImVec2* bounds_min, const ImVec2* bounds_max) {
     NewFrame();
     IM_ASSERT(open != nullptr);
     Context& context = GetContext();
@@ -1390,9 +1469,16 @@ bool Snackbar(const char* id_string, const char* message, bool* open,
     const Theme& theme = context.theme;
     const float dpi = DpiScale();
     ImGuiViewport* viewport = ImGui::GetMainViewport();
-    const float width = std::min(344.0f * dpi, viewport->WorkSize.x - 32.0f * dpi);
-    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
-                                   viewport->WorkPos.y + viewport->WorkSize.y - 16.0f * dpi),
+    ImVec2 area_min = viewport->WorkPos;
+    ImVec2 area_max = ImVec2(viewport->WorkPos.x + viewport->WorkSize.x,
+                             viewport->WorkPos.y + viewport->WorkSize.y);
+    if (bounds_min != nullptr && bounds_max != nullptr) {
+        area_min = *bounds_min;
+        area_max = *bounds_max;
+    }
+    const float width = std::min(344.0f * dpi, (area_max.x - area_min.x) - 32.0f * dpi);
+    ImGui::SetNextWindowPos(ImVec2((area_min.x + area_max.x) * 0.5f,
+                                   area_max.y - 16.0f * dpi),
                             ImGuiCond_Always, ImVec2(0.5f, 1.0f));
     ImGui::SetNextWindowSize(ImVec2(width, Metrics::SnackbarHeight()));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, theme.snackbar.Vec4());
